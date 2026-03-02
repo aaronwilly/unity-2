@@ -118,6 +118,13 @@ public class UIManager : MonoBehaviour
         return _defaultFont;
     }
 
+    private static Sprite LoadSpriteFromResources(string path)
+    {
+        var tex = Resources.Load<Texture2D>(path);
+        if (tex == null) return null;
+        return Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+    }
+
     public void Initialize(BattleManager battleManager, TurnManager turnManager, Action onRestartRequested = null)
     {
         _battleManager = battleManager;
@@ -182,52 +189,68 @@ public class UIManager : MonoBehaviour
         _backgroundRect.offsetMin = Vector2.zero;
         _backgroundRect.offsetMax = Vector2.zero;
         _backgroundImage = bgRoot.AddComponent<Image>();
-        _backgroundImage.color = new Color(0.06f, 0.04f, 0.12f, 1f);
+        Sprite bgSprite = LoadSpriteFromResources("Images/BattleBackground");
+        if (bgSprite != null)
+        {
+            _backgroundImage.sprite = bgSprite;
+            _backgroundImage.color = Color.white;
+            _backgroundImage.type = Image.Type.Simple;
+            _backgroundImage.preserveAspect = false;
+        }
+        else
+        {
+            _backgroundImage.color = new Color(0.06f, 0.04f, 0.12f, 1f);
+        }
         _backgroundImage.raycastTarget = false;
 
-        // Simulated gradient: top (darker) and bottom (lighter) bands for depth
-        var topBand = CreateBgLayer(bgRoot.transform, "TopBand", new Color(0.08f, 0.05f, 0.15f, 0.9f),
-            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, 0), new Vector2(RefWidth + 200, RefHeight * 0.6f));
-        var bottomBand = CreateBgLayer(bgRoot.transform, "BottomBand", new Color(0.12f, 0.08f, 0.2f, 0.85f),
-            new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 0), new Vector2(RefWidth + 200, RefHeight * 0.5f));
-
-        // Multiple parallax layers (back to front) for 3D depth
-        _parallaxLayers = new RectTransform[ParallaxLayerCount];
-        var layerColors = new[]
+        // When we have the background image, show only that (no blue/purple overlay)
+        if (bgSprite == null)
         {
-            new Color(0.15f, 0.1f, 0.28f, 0.35f),
-            new Color(0.18f, 0.12f, 0.32f, 0.3f),
-            new Color(0.12f, 0.08f, 0.22f, 0.4f),
-            new Color(0.08f, 0.06f, 0.15f, 0.5f)
-        };
-        for (int i = 0; i < ParallaxLayerCount; i++)
-        {
-            var layer = CreateBgLayer(bgRoot.transform, "ParallaxLayer" + i, layerColors[i],
-                Vector2.zero, Vector2.one, Vector2.zero, new Vector2(RefWidth + 400, RefHeight + 200));
-            _parallaxLayers[i] = (RectTransform)layer;
+            var topBand = CreateBgLayer(bgRoot.transform, "TopBand", new Color(0.08f, 0.05f, 0.15f, 0.9f),
+                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, 0), new Vector2(RefWidth + 200, RefHeight * 0.6f));
+            var bottomBand = CreateBgLayer(bgRoot.transform, "BottomBand", new Color(0.12f, 0.08f, 0.2f, 0.85f),
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 0), new Vector2(RefWidth + 200, RefHeight * 0.5f));
+            _parallaxLayers = new RectTransform[ParallaxLayerCount];
+            var layerColors = new[]
+            {
+                new Color(0.15f, 0.1f, 0.28f, 0.35f),
+                new Color(0.18f, 0.12f, 0.32f, 0.3f),
+                new Color(0.12f, 0.08f, 0.22f, 0.4f),
+                new Color(0.08f, 0.06f, 0.15f, 0.5f)
+            };
+            for (int i = 0; i < ParallaxLayerCount; i++)
+            {
+                var layer = CreateBgLayer(bgRoot.transform, "ParallaxLayer" + i, layerColors[i],
+                    Vector2.zero, Vector2.one, Vector2.zero, new Vector2(RefWidth + 400, RefHeight + 200));
+                _parallaxLayers[i] = (RectTransform)layer;
+            }
+            _depthOrbs = new RectTransform[DepthOrbCount];
+            _depthOrbImages = new Image[DepthOrbCount];
+            float[] orbX = { 0.15f, 0.45f, 0.75f, 0.25f, 0.6f, 0.85f };
+            float[] orbY = { 0.2f, 0.35f, 0.25f, 0.65f, 0.55f, 0.7f };
+            int[] orbSize = { 180, 120, 200, 100, 160, 140 };
+            for (int i = 0; i < DepthOrbCount; i++)
+            {
+                var orb = new GameObject("DepthOrb" + i);
+                orb.transform.SetParent(bgRoot.transform, false);
+                var rect = orb.AddComponent<RectTransform>();
+                rect.anchorMin = new Vector2(orbX[i], orbY[i]);
+                rect.anchorMax = new Vector2(orbX[i], orbY[i]);
+                rect.pivot = new Vector2(0.5f, 0.5f);
+                rect.anchoredPosition = Vector2.zero;
+                rect.sizeDelta = new Vector2(orbSize[i], orbSize[i]);
+                var img = orb.AddComponent<Image>();
+                img.color = new Color(0.35f, 0.2f, 0.5f, 0.12f);
+                img.raycastTarget = false;
+                _depthOrbs[i] = rect;
+                _depthOrbImages[i] = img;
+            }
         }
-
-        // Floating "depth orbs" for 3D atmosphere (soft glow quads)
-        _depthOrbs = new RectTransform[DepthOrbCount];
-        _depthOrbImages = new Image[DepthOrbCount];
-        float[] orbX = { 0.15f, 0.45f, 0.75f, 0.25f, 0.6f, 0.85f };
-        float[] orbY = { 0.2f, 0.35f, 0.25f, 0.65f, 0.55f, 0.7f };
-        int[] orbSize = { 180, 120, 200, 100, 160, 140 };
-        for (int i = 0; i < DepthOrbCount; i++)
+        else
         {
-            var orb = new GameObject("DepthOrb" + i);
-            orb.transform.SetParent(bgRoot.transform, false);
-            var rect = orb.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(orbX[i], orbY[i]);
-            rect.anchorMax = new Vector2(orbX[i], orbY[i]);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = Vector2.zero;
-            rect.sizeDelta = new Vector2(orbSize[i], orbSize[i]);
-            var img = orb.AddComponent<Image>();
-            img.color = new Color(0.35f, 0.2f, 0.5f, 0.12f);
-            img.raycastTarget = false;
-            _depthOrbs[i] = rect;
-            _depthOrbImages[i] = img;
+            _parallaxLayers = null;
+            _depthOrbs = null;
+            _depthOrbImages = null;
         }
     }
 
@@ -250,8 +273,8 @@ public class UIManager : MonoBehaviour
     {
         float time = Time.time;
 
-        // Base color slow pulse
-        if (_backgroundImage != null)
+        // Base color slow pulse (only when no background sprite)
+        if (_backgroundImage != null && _backgroundImage.sprite == null)
         {
             float t = Mathf.Sin(time * BackgroundColorSpeed) * 0.5f + 0.5f;
             _backgroundImage.color = Color.Lerp(

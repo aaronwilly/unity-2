@@ -11,10 +11,15 @@ using UnityEngine.EventSystems;
 public class StartScreenManager : MonoBehaviour
 {
     private CanvasGroup _panelCanvasGroup;
+    private CanvasGroup _transitionCanvasGroup;
     private GameObject _canvasGo;
+    private GameObject _startBgGo;
     private const int RefWidth = 1080;
     private const int RefHeight = 1920;
     private const float FadeOutDuration = 0.5f;
+    private const float TransitionFadeInDuration = 0.25f;
+    private const float TransitionHoldDuration = 0.4f;
+    private const float TransitionFadeOutDuration = 0.35f;
     private static Font _font;
 
     public void Initialize(Action onStartPressed)
@@ -35,6 +40,26 @@ public class StartScreenManager : MonoBehaviour
         return _font;
     }
 
+    private static Sprite LoadSpriteFromResources(string path)
+    {
+        var tex = Resources.Load<Texture2D>(path);
+        if (tex == null) return null;
+        return Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+    }
+
+    // Load from Assets/Resources/Images/StartBackground.png
+    private static Sprite GetStartBackgroundSprite()
+    {
+        Sprite s = Resources.Load<Sprite>("Images/StartBackground");
+        if (s != null) return s;
+        s = Resources.Load<Sprite>("StartBackground");
+        if (s != null) return s;
+        Texture2D tex = Resources.Load<Texture2D>("Images/StartBackground");
+        if (tex == null) tex = Resources.Load<Texture2D>("StartBackground");
+        if (tex != null) return Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+        return null;
+    }
+
     private void BuildStartScreen(Action onStartPressed)
     {
         _canvasGo = new GameObject("StartScreenCanvas");
@@ -49,6 +74,29 @@ public class StartScreenManager : MonoBehaviour
 
         var root = _canvasGo.transform;
 
+        // Full-screen background: StartBackground.png behind title and Start button
+        _startBgGo = new GameObject("StartBackground");
+        _startBgGo.transform.SetParent(root, false);
+        var bgRect = _startBgGo.AddComponent<RectTransform>();
+        bgRect.anchorMin = Vector2.zero;
+        bgRect.anchorMax = Vector2.one;
+        bgRect.offsetMin = Vector2.zero;
+        bgRect.offsetMax = Vector2.zero;
+        var bgImage = _startBgGo.AddComponent<Image>();
+        Sprite bgSprite = GetStartBackgroundSprite();
+        if (bgSprite != null)
+        {
+            bgImage.sprite = bgSprite;
+            bgImage.color = Color.white;
+            bgImage.type = Image.Type.Simple;
+            bgImage.preserveAspect = false;
+        }
+        else
+        {
+            bgImage.color = new Color(1f, 1f, 1f, 0f);
+        }
+        bgImage.raycastTarget = false;
+
         var panelGo = new GameObject("StartPanel");
         panelGo.transform.SetParent(root, false);
         var panelRect = panelGo.AddComponent<RectTransform>();
@@ -57,7 +105,8 @@ public class StartScreenManager : MonoBehaviour
         panelRect.offsetMin = Vector2.zero;
         panelRect.offsetMax = Vector2.zero;
         var panelImg = panelGo.AddComponent<Image>();
-        panelImg.color = new Color(0.08f, 0.06f, 0.12f, 1f);
+        panelImg.color = new Color(1f, 1f, 1f, 0f);
+        panelImg.raycastTarget = true;
         _panelCanvasGroup = panelGo.AddComponent<CanvasGroup>();
         _panelCanvasGroup.alpha = 1f;
         _panelCanvasGroup.blocksRaycasts = true;
@@ -71,7 +120,7 @@ public class StartScreenManager : MonoBehaviour
         titleRect.anchoredPosition = Vector2.zero;
         titleRect.sizeDelta = new Vector2(500, 80);
         var titleText = titleGo.AddComponent<Text>();
-        titleText.text = "BATTLE";
+        titleText.text = "RAID RUSH";
         titleText.fontSize = 48;
         titleText.alignment = TextAnchor.MiddleCenter;
         titleText.color = new Color(0.9f, 0.85f, 0.95f, 1f);
@@ -107,6 +156,35 @@ public class StartScreenManager : MonoBehaviour
             btn.interactable = false;
             StartCoroutine(FadeOutAndNotify(onStartPressed));
         });
+
+        CreateTransitionOverlay(root);
+    }
+
+    private void CreateTransitionOverlay(Transform root)
+    {
+        var transGo = new GameObject("TransitionOverlay");
+        transGo.transform.SetParent(root, false);
+        var transRect = transGo.AddComponent<RectTransform>();
+        transRect.anchorMin = Vector2.zero;
+        transRect.anchorMax = Vector2.one;
+        transRect.offsetMin = Vector2.zero;
+        transRect.offsetMax = Vector2.zero;
+        var transImg = transGo.AddComponent<Image>();
+        Sprite transSprite = LoadSpriteFromResources("Images/Transition");
+        if (transSprite != null)
+        {
+            transImg.sprite = transSprite;
+            transImg.color = Color.white;
+            transImg.type = Image.Type.Simple;
+            transImg.preserveAspect = false;
+        }
+        else
+            transImg.color = new Color(0.1f, 0.06f, 0.02f, 1f);
+        transImg.raycastTarget = false;
+        _transitionCanvasGroup = transGo.AddComponent<CanvasGroup>();
+        _transitionCanvasGroup.alpha = 0f;
+        _transitionCanvasGroup.blocksRaycasts = false;
+        transGo.SetActive(true);
     }
 
     private IEnumerator FadeOutAndNotify(Action onStartPressed)
@@ -126,6 +204,29 @@ public class StartScreenManager : MonoBehaviour
             _panelCanvasGroup.blocksRaycasts = false;
             _panelCanvasGroup.interactable = false;
         }
+
+        if (_transitionCanvasGroup != null)
+        {
+            _transitionCanvasGroup.gameObject.SetActive(true);
+            elapsed = 0f;
+            while (elapsed < TransitionFadeInDuration)
+            {
+                elapsed += Time.deltaTime;
+                _transitionCanvasGroup.alpha = Mathf.Clamp01(elapsed / TransitionFadeInDuration);
+                yield return null;
+            }
+            _transitionCanvasGroup.alpha = 1f;
+            yield return new WaitForSeconds(TransitionHoldDuration);
+            elapsed = 0f;
+            while (elapsed < TransitionFadeOutDuration)
+            {
+                elapsed += Time.deltaTime;
+                _transitionCanvasGroup.alpha = 1f - Mathf.Clamp01(elapsed / TransitionFadeOutDuration);
+                yield return null;
+            }
+            _transitionCanvasGroup.alpha = 0f;
+        }
+
         onStartPressed?.Invoke();
         if (_canvasGo != null)
             _canvasGo.SetActive(false);

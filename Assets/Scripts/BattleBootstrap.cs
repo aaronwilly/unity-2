@@ -19,6 +19,8 @@ public class BattleBootstrap : MonoBehaviour
 
     private void Awake()
     {
+        LockPortraitOrientation();
+        HideDefaultSceneCamera();
         CreateSoundManager();
         CreateScreenShakeManager();
         CreateUnits();
@@ -27,6 +29,24 @@ public class BattleBootstrap : MonoBehaviour
         CreateStartScreen();
         WireCaptureManager();
         _turnManager.OnTurnChanged += OnTurnChanged;
+    }
+
+    private void LockPortraitOrientation()
+    {
+        Screen.orientation = ScreenOrientation.Portrait;
+        Screen.autorotateToPortrait = true;
+        Screen.autorotateToPortraitUpsideDown = false;
+        Screen.autorotateToLandscapeLeft = false;
+        Screen.autorotateToLandscapeRight = false;
+    }
+
+    private void HideDefaultSceneCamera()
+    {
+        Camera cam = Camera.main;
+        if (cam == null) return;
+        cam.clearFlags = CameraClearFlags.SolidColor;
+        cam.backgroundColor = new Color(0.02f, 0.02f, 0.04f, 1f);
+        cam.cullingMask = 0;
     }
 
     private void CreateSoundManager()
