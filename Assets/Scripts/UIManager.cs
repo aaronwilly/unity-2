@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 
 /// <summary>
 /// Builds all battle UI in code: Canvas, background, HP/SP bars, turn text, ability buttons, capture button.
@@ -35,6 +36,19 @@ public class UIManager : MonoBehaviour
     private Button _defendBtn;
     private Button _specialBtn;
     private Button _captureBtn;
+
+    private static readonly Color AbilityBtnNormal = new Color(0.25f, 0.5f, 0.3f, 1f);
+    private static readonly Color AbilityBtnHover = new Color(0.35f, 0.65f, 0.4f, 1f);
+    private static readonly Color AbilityBtnFlash = new Color(0.5f, 0.85f, 0.55f, 1f);
+    private const float PressScale = 0.9f;
+    private const float PressAnimDuration = 0.12f;
+
+    private static readonly Color PanelNormalColor = new Color(0.15f, 0.15f, 0.2f, 0.9f);
+    private static readonly Color TargetFlashColor = new Color(0.85f, 0.2f, 0.2f, 0.95f);
+    private const float AttackMoveAmount = 36f;
+    private const float ShakeAmount = 6f;
+    private const float ShakeDuration = 0.18f;
+    private const float FlashDuration = 0.12f;
     private GameObject _captureButtonObj;
 
     private const int RefWidth = 1080;
@@ -294,12 +308,13 @@ public class UIManager : MonoBehaviour
 
         var abilityPanel = CreatePanel(root, "AbilityPanel",
             new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 120), new Vector2(RefWidth - 80, 100));
-        _attackBtn = CreateButton(abilityPanel, "Attack", "Attack", () => OnAbilityClicked(Ability.BasicAttack));
+        _attackBtn = CreateAbilityButton(abilityPanel, "Attack", "Attack", () => OnAbilityClicked(Ability.BasicAttack));
         SetRect(_attackBtn.transform as RectTransform, new Vector2(0.2f, 0.5f), new Vector2(160, 70));
-        _defendBtn = CreateButton(abilityPanel, "Defend", "Defend", () => OnAbilityClicked(Ability.DefensiveMove));
+        _defendBtn = CreateAbilityButton(abilityPanel, "Defend", "Defend", () => OnAbilityClicked(Ability.DefensiveMove));
         SetRect(_defendBtn.transform as RectTransform, new Vector2(0.5f, 0.5f), new Vector2(160, 70));
-        _specialBtn = CreateButton(abilityPanel, "Special", "Special", () => OnAbilityClicked(Ability.SpecialSkill));
+        _specialBtn = CreateAbilityButton(abilityPanel, "Special", "Special", () => OnAbilityClicked(Ability.SpecialSkill));
         SetRect(_specialBtn.transform as RectTransform, new Vector2(0.8f, 0.5f), new Vector2(160, 70));
+        StartCoroutine(SpecialButtonPulseCoroutine());
 
         _captureButtonObj = new GameObject("CaptureButton");
         _captureButtonObj.transform.SetParent(root, false);
@@ -442,6 +457,105 @@ public class UIManager : MonoBehaviour
         return btn;
     }
 
+    /// <summary>Ability button with press scale + color flash, hover effect. Effects wired via EventTrigger and coroutines.</summary>
+    private Button CreateAbilityButton(Transform parent, string name, string label, Action onClick)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        var img = go.AddComponent<Image>();
+        img.color = AbilityBtnNormal;
+        var btn = go.AddComponent<Button>();
+        var textGo = new GameObject("Text");
+        textGo.transform.SetParent(go.transform, false);
+        var text = textGo.AddComponent<Text>();
+        text.text = label;
+        text.fontSize = 22;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = Color.white;
+        if (GetDefaultFont() != null) text.font = GetDefaultFont();
+        var textRect = (RectTransform)textGo.transform;
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = Vector2.zero;
+        textRect.offsetMax = Vector2.zero;
+        btn.onClick.AddListener(() => onClick?.Invoke());
+
+        var rect = (RectTransform)go.transform;
+        var et = go.AddComponent<EventTrigger>();
+        AddEventTriggerEntry(et, EventTriggerType.PointerDown, _ => OnAbilityButtonPointerDown(rect, img));
+        AddEventTriggerEntry(et, EventTriggerType.PointerUp, _ => OnAbilityButtonPointerUp(rect, img));
+        AddEventTriggerEntry(et, EventTriggerType.PointerEnter, _ => OnAbilityButtonPointerEnter(img));
+        AddEventTriggerEntry(et, EventTriggerType.PointerExit, _ => OnAbilityButtonPointerExit(rect, img));
+        return btn;
+    }
+
+    private static void AddEventTriggerEntry(EventTrigger et, EventTriggerType type, UnityEngine.Events.UnityAction<BaseEventData> callback)
+    {
+        var entry = new EventTrigger.Entry { eventID = type };
+        entry.callback.AddListener(_ => callback?.Invoke(_));
+        et.triggers.Add(entry);
+    }
+
+    private void OnAbilityButtonPointerDown(RectTransform rect, Image img)
+    {
+        if (rect != null) rect.localScale = Vector3.one * PressScale;
+        if (img != null) img.color = AbilityBtnFlash;
+    }
+
+    private void OnAbilityButtonPointerUp(RectTransform rect, Image img)
+    {
+        StartCoroutine(AbilityButtonPressReleaseCoroutine(rect, img));
+    }
+
+    private void OnAbilityButtonPointerEnter(Image img)
+    {
+        if (img != null) img.color = AbilityBtnHover;
+    }
+
+    private void OnAbilityButtonPointerExit(RectTransform rect, Image img)
+    {
+        if (rect != null) rect.localScale = Vector3.one;
+        if (img != null) img.color = AbilityBtnNormal;
+    }
+
+    private IEnumerator AbilityButtonPressReleaseCoroutine(RectTransform rect, Image img)
+    {
+        float elapsed = 0f;
+        while (elapsed < PressAnimDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / PressAnimDuration);
+            t = 1f - (1f - t) * (1f - t);
+            if (rect != null) rect.localScale = Vector3.one * Mathf.Lerp(PressScale, 1f, t);
+            if (img != null) img.color = Color.Lerp(AbilityBtnFlash, AbilityBtnNormal, t);
+            yield return null;
+        }
+        if (rect != null) rect.localScale = Vector3.one;
+        if (img != null) img.color = AbilityBtnNormal;
+    }
+
+    private IEnumerator SpecialButtonPulseCoroutine()
+    {
+        const float pulseAmplitude = 0.06f;
+        const float pulseSpeed = 2.8f;
+        const float pressThreshold = 0.95f;
+        while (true)
+        {
+            if (_specialBtn != null)
+            {
+                float currentScale = _specialBtn.transform.localScale.x;
+                if (_specialBtn.interactable && currentScale >= pressThreshold)
+                {
+                    float s = 1f + pulseAmplitude * Mathf.Sin(Time.time * pulseSpeed);
+                    _specialBtn.transform.localScale = Vector3.one * Mathf.Clamp(s, 0.98f, 1.08f);
+                }
+                else if (!_specialBtn.interactable)
+                    _specialBtn.transform.localScale = Vector3.one;
+            }
+            yield return null;
+        }
+    }
+
     private static void SetRect(RectTransform rect, Vector2 anchorPos, Vector2 size)
     {
         if (rect == null) return;
@@ -458,6 +572,54 @@ public class UIManager : MonoBehaviour
             _turnManager.OnTurnChanged += _ => { RefreshAll(); };
     }
 
+    private RectTransform GetPanelRectForUnit(Unit unit)
+    {
+        if (unit == null || _battleManager == null) return null;
+        if (unit == _battleManager.Enemy) return _enemyPanelRect;
+        if (unit == _battleManager.Player1) return _ally1PanelRect;
+        if (unit == _battleManager.Player2) return _ally2PanelRect;
+        return null;
+    }
+
+    /// <summary>Coroutine: move attacker forward, shake target, flash target red. No Animator. onComplete invoked when done.</summary>
+    public IEnumerator PlayAttackAnimationCoroutine(Unit attacker, Unit target, Action onComplete = null)
+    {
+        RectTransform attackerRect = GetPanelRectForUnit(attacker);
+        RectTransform targetRect = GetPanelRectForUnit(target);
+        if (attackerRect == null || targetRect == null)
+        {
+            onComplete?.Invoke();
+            yield break;
+        }
+        Image targetImage = targetRect.GetComponent<Image>();
+        Vector2 attackerStart = attackerRect.anchoredPosition;
+        Vector2 targetStart = targetRect.anchoredPosition;
+        Color targetColor = targetImage != null ? targetImage.color : PanelNormalColor;
+        float moveY = (attacker == _battleManager.Enemy) ? -AttackMoveAmount : AttackMoveAmount;
+
+        attackerRect.anchoredPosition = attackerStart + new Vector2(0f, moveY);
+        yield return new WaitForSeconds(0.06f);
+
+        if (targetImage != null) targetImage.color = TargetFlashColor;
+        float shakeElapsed = 0f;
+        while (shakeElapsed < ShakeDuration)
+        {
+            shakeElapsed += Time.deltaTime;
+            float shakeScale = 1f - (shakeElapsed / ShakeDuration);
+            targetRect.anchoredPosition = targetStart + (UnityEngine.Random.insideUnitCircle * ShakeAmount * shakeScale);
+            yield return null;
+        }
+        targetRect.anchoredPosition = targetStart;
+        if (targetImage != null) targetImage.color = targetColor;
+
+        yield return new WaitForSeconds(FlashDuration * 0.5f);
+
+        attackerRect.anchoredPosition = attackerStart;
+        yield return new WaitForSeconds(0.04f);
+
+        onComplete?.Invoke();
+    }
+
     private void OnAbilityClicked(Ability ability)
     {
         if (_battleManager == null || _turnManager == null) return;
@@ -467,9 +629,22 @@ public class UIManager : MonoBehaviour
         Unit target = _battleManager.Enemy;
         if (ability.Id == Ability.DefensiveMove.Id)
             target = caster;
-        _battleManager.ExecuteAbility(ability, caster, target);
-        RefreshAll();
-        UpdateCaptureButtonVisibility();
+
+        if (ability.Id == Ability.BasicAttack.Id || ability.Id == Ability.SpecialSkill.Id)
+        {
+            StartCoroutine(PlayAttackAnimationCoroutine(caster, target, () =>
+            {
+                _battleManager.ExecuteAbility(ability, caster, target);
+                RefreshAll();
+                UpdateCaptureButtonVisibility();
+            }));
+        }
+        else
+        {
+            _battleManager.ExecuteAbility(ability, caster, target);
+            RefreshAll();
+            UpdateCaptureButtonVisibility();
+        }
     }
 
     private void OnCaptureClicked()

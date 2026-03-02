@@ -39,7 +39,10 @@ public class BattleBootstrap : MonoBehaviour
         Unit target = UnityEngine.Random.Range(0, 2) == 0 ? _player1 : _player2;
         if (!target.IsAlive) target = _player1.IsAlive ? _player1 : _player2;
         if (target != null && target.IsAlive)
+        {
+            yield return _uiManager.StartCoroutine(_uiManager.PlayAttackAnimationCoroutine(_enemy, target, null));
             _battleManager.ExecuteAbility(Ability.BasicAttack, _enemy, target);
+        }
     }
 
     private void CreateUnits()
