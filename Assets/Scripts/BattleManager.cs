@@ -17,6 +17,8 @@ public class BattleManager
     public event Action OnBattleEnd;
     public event Action OnCaptureAttempt;
     public event Action<bool> OnCaptureResult;
+    /// <summary>Fired when any unit's HP/SP changes so UI can refresh immediately.</summary>
+    public event Action OnUnitStatsChanged;
 
     private const int BaseDamage = 15;
     private const float CaptureHpThreshold = 0.3f;
@@ -60,6 +62,7 @@ public class BattleManager
         if (ability.Id == Ability.DefensiveMove.Id)
         {
             caster.ApplyDefenseBuff();
+            OnUnitStatsChanged?.Invoke();
             TurnManager.NextTurn();
             return;
         }
@@ -71,6 +74,7 @@ public class BattleManager
 
             int damage = Mathf.RoundToInt(BaseDamage * ability.DamageMultiplier);
             target.TakeDamage(damage);
+            OnUnitStatsChanged?.Invoke();
 
             if (!target.IsAlive)
             {
@@ -99,10 +103,12 @@ public class BattleManager
         if (success)
         {
             Enemy.HP = 0;
+            OnUnitStatsChanged?.Invoke();
             OnBattleEnd?.Invoke();
         }
         else
         {
+            OnUnitStatsChanged?.Invoke();
             TurnManager.NextTurn();
         }
     }

@@ -12,14 +12,14 @@ public class UIManager : MonoBehaviour
     private TurnManager _turnManager;
 
     private Text _turnText;
-    private Image _p1HpBar;
-    private Image _p1SpBar;
+    private GameObject _p1HpBarFill;
+    private GameObject _p1SpBarFill;
     private Text _p1Label;
-    private Image _p2HpBar;
-    private Image _p2SpBar;
+    private GameObject _p2HpBarFill;
+    private GameObject _p2SpBarFill;
     private Text _p2Label;
-    private Image _enemyHpBar;
-    private Image _enemySpBar;
+    private GameObject _enemyHpBarFill;
+    private GameObject _enemySpBarFill;
     private Text _enemyLabel;
     private Button _attackBtn;
     private Button _defendBtn;
@@ -42,6 +42,8 @@ public class UIManager : MonoBehaviour
     {
         _battleManager = battleManager;
         _turnManager = turnManager;
+        if (_battleManager != null)
+            _battleManager.OnUnitStatsChanged += RefreshAll;
         EnsureEventSystem();
         BuildCanvasAndUI();
         SubscribeToTurn();
@@ -74,22 +76,22 @@ public class UIManager : MonoBehaviour
             new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -80), new Vector2(400, 80));
 
         var playerPanel = CreatePanel(root, "PlayerPanel",
-            new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(120, 0), new Vector2(320, 600));
-        _p1Label = CreateText(playerPanel, "P1Label", "P1 Lv1", 24,
-            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -30), new Vector2(280, 40));
-        _p1HpBar = CreateFilledBar(playerPanel, "P1HP", Color.green, new Vector2(0.5f, 1f), new Vector2(0, -90), new Vector2(280, 24));
-        _p1SpBar = CreateFilledBar(playerPanel, "P1SP", Color.blue, new Vector2(0.5f, 1f), new Vector2(0, -130), new Vector2(280, 16));
-        _p2Label = CreateText(playerPanel, "P2Label", "P2 Lv1", 24,
-            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -200), new Vector2(280, 40));
-        _p2HpBar = CreateFilledBar(playerPanel, "P2HP", Color.green, new Vector2(0.5f, 1f), new Vector2(0, -260), new Vector2(280, 24));
-        _p2SpBar = CreateFilledBar(playerPanel, "P2SP", Color.blue, new Vector2(0.5f, 1f), new Vector2(0, -300), new Vector2(280, 16));
+            new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(160, 0), new Vector2(320, 600));
+        _p1Label = CreateText(playerPanel, "P1Label", "P1 Lv1", 22,
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -40), new Vector2(280, 56));
+        _p1HpBarFill = CreateFilledBar(playerPanel, "P1HP", Color.green, new Vector2(0.5f, 1f), new Vector2(0, -105), new Vector2(280, 24));
+        _p1SpBarFill = CreateFilledBar(playerPanel, "P1SP", Color.blue, new Vector2(0.5f, 1f), new Vector2(0, -145), new Vector2(280, 16));
+        _p2Label = CreateText(playerPanel, "P2Label", "P2 Lv1", 22,
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -220), new Vector2(280, 56));
+        _p2HpBarFill = CreateFilledBar(playerPanel, "P2HP", Color.green, new Vector2(0.5f, 1f), new Vector2(0, -285), new Vector2(280, 24));
+        _p2SpBarFill = CreateFilledBar(playerPanel, "P2SP", Color.blue, new Vector2(0.5f, 1f), new Vector2(0, -325), new Vector2(280, 16));
 
         var enemyPanel = CreatePanel(root, "EnemyPanel",
-            new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-120, 0), new Vector2(320, 200));
-        _enemyLabel = CreateText(enemyPanel, "EnemyLabel", "Enemy Lv1", 24,
-            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -30), new Vector2(280, 40));
-        _enemyHpBar = CreateFilledBar(enemyPanel, "EnemyHP", Color.red, new Vector2(0.5f, 1f), new Vector2(0, -80), new Vector2(280, 24));
-        _enemySpBar = CreateFilledBar(enemyPanel, "EnemySP", Color.cyan, new Vector2(0.5f, 1f), new Vector2(0, -120), new Vector2(280, 16));
+            new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-160, 0), new Vector2(320, 200));
+        _enemyLabel = CreateText(enemyPanel, "EnemyLabel", "Enemy Lv1", 22,
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -40), new Vector2(280, 56));
+        _enemyHpBarFill = CreateFilledBar(enemyPanel, "EnemyHP", Color.red, new Vector2(0.5f, 1f), new Vector2(0, -95), new Vector2(280, 24));
+        _enemySpBarFill = CreateFilledBar(enemyPanel, "EnemySP", Color.cyan, new Vector2(0.5f, 1f), new Vector2(0, -135), new Vector2(280, 16));
 
         var abilityPanel = CreatePanel(root, "AbilityPanel",
             new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 120), new Vector2(RefWidth - 80, 100));
@@ -160,7 +162,8 @@ public class UIManager : MonoBehaviour
         return text;
     }
 
-    private Image CreateFilledBar(Transform parent, string name, Color color, Vector2 anchor, Vector2 pos, Vector2 size)
+    /// <summary>Creates a bar: grey background (full width) + colored fill (child, width updated by ApplyBarFill). Returns the fill GameObject.</summary>
+    private GameObject CreateFilledBar(Transform parent, string name, Color color, Vector2 anchor, Vector2 pos, Vector2 size)
     {
         var bg = new GameObject(name + "Bg");
         bg.transform.SetParent(parent, false);
@@ -174,18 +177,41 @@ public class UIManager : MonoBehaviour
 
         var fill = new GameObject(name);
         fill.transform.SetParent(bg.transform, false);
-        var fillRect = fill.AddComponent<RectTransform>();
-        fillRect.anchorMin = Vector2.zero;
-        fillRect.anchorMax = Vector2.one;
-        fillRect.offsetMin = Vector2.zero;
-        fillRect.offsetMax = Vector2.zero;
         var fillImg = fill.AddComponent<Image>();
         fillImg.color = color;
-        fillImg.type = Image.Type.Filled;
-        fillImg.fillMethod = Image.FillMethod.Horizontal;
-        fillImg.fillOrigin = (int)Image.OriginHorizontal.Left;
-        fillImg.fillAmount = 1f;
-        return fillImg;
+        fillImg.raycastTarget = false;
+        var fillRect = (RectTransform)fill.transform;
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = new Vector2(1f, 1f);
+        fillRect.pivot = new Vector2(0f, 0.5f);
+        fillRect.offsetMin = Vector2.zero;
+        fillRect.offsetMax = Vector2.zero;
+        return fill;
+    }
+
+    /// <summary>Set bar to show amount (0-1): fill width = amount, rest is grey background. HP bars get color by amount (green/yellow/red).</summary>
+    private static void ApplyBarFill(GameObject fillGo, float amount, bool useHpColor, Color? spColor = null)
+    {
+        if (fillGo == null) return;
+        float ratio = Mathf.Clamp01(amount);
+        var rect = fillGo.transform as RectTransform;
+        if (rect != null)
+        {
+            rect.anchorMin = new Vector2(0f, 0f);
+            rect.anchorMax = new Vector2(ratio, 1f);
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+        }
+        var img = fillGo.GetComponent<Image>();
+        if (img == null) return;
+        if (useHpColor)
+        {
+            if (ratio > 0.5f) img.color = Color.Lerp(Color.yellow, Color.green, (ratio - 0.5f) * 2f);
+            else if (ratio > 0.25f) img.color = Color.Lerp(Color.red, Color.yellow, (ratio - 0.25f) * 4f);
+            else img.color = Color.red;
+        }
+        else if (spColor.HasValue)
+            img.color = spColor.Value;
     }
 
     private Button CreateButton(Transform parent, string name, string label, Action onClick)
@@ -269,17 +295,21 @@ public class UIManager : MonoBehaviour
         string turnName = idx == 0 ? "Player 1" : idx == 1 ? "Player 2" : "Enemy";
         if (_turnText != null) _turnText.text = "Turn: " + turnName;
 
-        if (_p1HpBar != null) _p1HpBar.fillAmount = _battleManager.Player1.HPRatio;
-        if (_p1SpBar != null) _p1SpBar.fillAmount = _battleManager.Player1.SPRatio;
-        if (_p1Label != null) _p1Label.text = _battleManager.Player1.Name + " Lv" + _battleManager.Player1.Level + " " + _battleManager.Player1.HP + "/" + _battleManager.Player1.MaxHP;
+        var p1 = _battleManager.Player1;
+        var p2 = _battleManager.Player2;
+        var en = _battleManager.Enemy;
 
-        if (_p2HpBar != null) _p2HpBar.fillAmount = _battleManager.Player2.HPRatio;
-        if (_p2SpBar != null) _p2SpBar.fillAmount = _battleManager.Player2.SPRatio;
-        if (_p2Label != null) _p2Label.text = _battleManager.Player2.Name + " Lv" + _battleManager.Player2.Level + " " + _battleManager.Player2.HP + "/" + _battleManager.Player2.MaxHP;
+        ApplyBarFill(_p1HpBarFill, p1.HPRatio, true, null);
+        ApplyBarFill(_p1SpBarFill, p1.SPRatio, false, Color.blue);
+        if (_p1Label != null) _p1Label.text = p1.Name + " Lv" + p1.Level + "\nHP " + p1.HP + "/" + p1.MaxHP + "  SP " + p1.SP + "/" + p1.MaxSP;
 
-        if (_enemyHpBar != null) _enemyHpBar.fillAmount = _battleManager.Enemy.HPRatio;
-        if (_enemySpBar != null) _enemySpBar.fillAmount = _battleManager.Enemy.SPRatio;
-        if (_enemyLabel != null) _enemyLabel.text = _battleManager.Enemy.Name + " Lv" + _battleManager.Enemy.Level + " " + _battleManager.Enemy.HP + "/" + _battleManager.Enemy.MaxHP;
+        ApplyBarFill(_p2HpBarFill, p2.HPRatio, true, null);
+        ApplyBarFill(_p2SpBarFill, p2.SPRatio, false, Color.blue);
+        if (_p2Label != null) _p2Label.text = p2.Name + " Lv" + p2.Level + "\nHP " + p2.HP + "/" + p2.MaxHP + "  SP " + p2.SP + "/" + p2.MaxSP;
+
+        ApplyBarFill(_enemyHpBarFill, en.HPRatio, true, null);
+        ApplyBarFill(_enemySpBarFill, en.SPRatio, false, Color.cyan);
+        if (_enemyLabel != null) _enemyLabel.text = en.Name + " Lv" + en.Level + "\nHP " + en.HP + "/" + en.MaxHP + "  SP " + en.SP + "/" + en.MaxSP;
 
         bool playerTurn = _turnManager.IsPlayerTurn;
         Unit current = _battleManager.GetCurrentUnit();
