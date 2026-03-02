@@ -20,6 +20,7 @@ public class BattleBootstrap : MonoBehaviour
     private void Awake()
     {
         CreateSoundManager();
+        CreateScreenShakeManager();
         CreateUnits();
         CreateManagers();
         CreateUI();
@@ -32,6 +33,12 @@ public class BattleBootstrap : MonoBehaviour
     {
         var go = new GameObject("SoundManager");
         go.AddComponent<SoundManager>();
+    }
+
+    private void CreateScreenShakeManager()
+    {
+        var go = new GameObject("ScreenShakeManager");
+        go.AddComponent<ScreenShakeManager>();
     }
 
     private void OnTurnChanged(int turnIndex)

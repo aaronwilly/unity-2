@@ -106,8 +106,6 @@ public class UIManager : MonoBehaviour
     private const int CaptureDotPoolSize = 12;
     private const float CaptureSuccessGlowDuration = 0.45f;
     private const float CaptureSuccessFadeDuration = 0.5f;
-    private const float CaptureFailShakeDuration = 0.22f;
-    private const float CaptureFailShakeAmount = 8f;
     private const float CaptureFailFlashDuration = 0.15f;
     private const float ResultPanelFadeDuration = 0.4f;
 
@@ -133,6 +131,8 @@ public class UIManager : MonoBehaviour
         }
         EnsureEventSystem();
         BuildCanvasAndUI();
+        if (ScreenShakeManager.Instance != null)
+            ScreenShakeManager.Instance.SetTarget(_canvasRootTransform);
         SubscribeToTurn();
         RefreshAll();
         StartCoroutine(RunSpawnAnimation());
@@ -1133,20 +1133,16 @@ public class UIManager : MonoBehaviour
 
     private IEnumerator CaptureFailCoroutine()
     {
-        if (_canvasRootTransform == null || _enemyPanelRect == null) yield break;
+        if (_enemyPanelRect == null) yield break;
         Image enemyImage = _enemyPanelRect.GetComponent<Image>();
         Color enemyColor = enemyImage != null ? enemyImage.color : PanelNormalColor;
-        float shakeElapsed = 0f;
-        while (shakeElapsed < CaptureFailShakeDuration)
+        float elapsed = 0f;
+        while (elapsed < CaptureFailFlashDuration)
         {
-            shakeElapsed += Time.deltaTime;
-            float amp = CaptureFailShakeAmount * (1f - shakeElapsed / CaptureFailShakeDuration);
-            _canvasRootTransform.localPosition = _canvasRootBasePosition + (Vector3)(UnityEngine.Random.insideUnitCircle * amp);
-            if (enemyImage != null && shakeElapsed < CaptureFailFlashDuration)
-                enemyImage.color = TargetFlashColor;
+            elapsed += Time.deltaTime;
+            if (enemyImage != null) enemyImage.color = TargetFlashColor;
             yield return null;
         }
-        _canvasRootTransform.localPosition = _canvasRootBasePosition;
         if (enemyImage != null) enemyImage.color = enemyColor;
     }
 

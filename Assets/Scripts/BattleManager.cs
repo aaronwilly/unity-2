@@ -74,6 +74,9 @@ public class BattleManager
             if (ability.SPCost > 0)
                 caster.SpendSP(ability.SPCost);
 
+            if (ability.Id == Ability.SpecialSkill.Id && ScreenShakeManager.Instance != null)
+                ScreenShakeManager.Instance.Shake(0.3f, 8f);
+
             int damage = Mathf.RoundToInt(BaseDamage * ability.DamageMultiplier);
             target.TakeDamage(damage);
             OnUnitStatsChanged?.Invoke();
@@ -114,6 +117,8 @@ public class BattleManager
         }
         else
         {
+            if (ScreenShakeManager.Instance != null)
+                ScreenShakeManager.Instance.Shake(0.3f, 10f);
             OnUnitStatsChanged?.Invoke();
             TurnManager.NextTurn();
         }
