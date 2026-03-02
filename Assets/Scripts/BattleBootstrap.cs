@@ -3,7 +3,7 @@ using UnityEngine;
 
 /// <summary>
 /// Entry point: attach to a single empty GameObject in an empty scene.
-/// Creates units, managers, UI, and wires everything in code. No inspector refs.
+/// Creates units, managers, start screen, then battle UI (hidden until Start). No inspector refs.
 /// </summary>
 public class BattleBootstrap : MonoBehaviour
 {
@@ -14,6 +14,7 @@ public class BattleBootstrap : MonoBehaviour
     private CaptureManager _captureManager;
     private BattleManager _battleManager;
     private UIManager _uiManager;
+    private StartScreenManager _startScreenManager;
     private bool _battleEnded;
 
     private void Awake()
@@ -21,6 +22,7 @@ public class BattleBootstrap : MonoBehaviour
         CreateUnits();
         CreateManagers();
         CreateUI();
+        CreateStartScreen();
         WireCaptureManager();
         _turnManager.OnTurnChanged += OnTurnChanged;
     }
@@ -65,7 +67,30 @@ public class BattleBootstrap : MonoBehaviour
     {
         var uiGo = new GameObject("UIManager");
         _uiManager = uiGo.AddComponent<UIManager>();
-        _uiManager.Initialize(_battleManager, _turnManager);
+        _uiManager.Initialize(_battleManager, _turnManager, RestartBattle);
+    }
+
+    /// <summary>Resets entire battle state without scene reload. Called when Restart is pressed.</summary>
+    private void RestartBattle()
+    {
+        _battleEnded = false;
+        _player1.Reset();
+        _player2.Reset();
+        _enemy.Reset();
+        _turnManager.Reset();
+        _uiManager.ResetAfterRestart();
+    }
+
+    private void CreateStartScreen()
+    {
+        var startGo = new GameObject("StartScreenManager");
+        _startScreenManager = startGo.AddComponent<StartScreenManager>();
+        _startScreenManager.Initialize(OnStartPressed);
+    }
+
+    private void OnStartPressed()
+    {
+        _uiManager.FadeInBattle(null);
     }
 
     private void WireCaptureManager()

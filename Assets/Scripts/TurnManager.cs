@@ -32,4 +32,11 @@ public class TurnManager
     {
         return CurrentTurnIndex;
     }
+
+    /// <summary>Reset to first turn (Player 1) for battle restart.</summary>
+    public void Reset()
+    {
+        CurrentTurnIndex = 0;
+        OnTurnChanged?.Invoke(CurrentTurnIndex);
+    }
 }

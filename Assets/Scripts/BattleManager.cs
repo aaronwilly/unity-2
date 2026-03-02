@@ -15,6 +15,8 @@ public class BattleManager
     public CaptureManager CaptureManager { get; }
 
     public event Action OnBattleEnd;
+    /// <summary>True = victory (enemy dead), false = defeat (all allies dead). Fired when battle ends.</summary>
+    public event Action<bool> OnBattleEndWithResult;
     public event Action OnCaptureAttempt;
     public event Action<bool> OnCaptureResult;
     /// <summary>Fired when any unit's HP/SP changes so UI can refresh immediately.</summary>
@@ -81,7 +83,10 @@ public class BattleManager
                 bool enemyDied = (target == Enemy);
                 bool allPlayersDead = !Player1.IsAlive && !Player2.IsAlive;
                 if (enemyDied || allPlayersDead)
+                {
+                    OnBattleEndWithResult?.Invoke(enemyDied);
                     OnBattleEnd?.Invoke();
+                }
                 if (!enemyDied)
                     TurnManager.NextTurn();
                 return;
@@ -104,6 +109,7 @@ public class BattleManager
         {
             Enemy.HP = 0;
             OnUnitStatsChanged?.Invoke();
+            OnBattleEndWithResult?.Invoke(true);
             OnBattleEnd?.Invoke();
         }
         else

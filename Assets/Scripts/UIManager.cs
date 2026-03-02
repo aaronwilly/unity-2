@@ -51,6 +51,23 @@ public class UIManager : MonoBehaviour
     private const float FlashDuration = 0.12f;
     private GameObject _captureButtonObj;
 
+    private Transform _canvasRootTransform;
+    private Image _captureOverlayImage;
+    private RectTransform _captureGlowRect;
+    private Image _captureGlowImage;
+    private Transform _captureDotsContainer;
+    private System.Collections.Generic.List<RectTransform> _captureDots = new System.Collections.Generic.List<RectTransform>();
+    private Coroutine _captureDotsCoroutine;
+    private CanvasGroup _enemyPanelCanvasGroup;
+    private CanvasGroup _battleCanvasGroup;
+    private Vector3 _canvasRootBasePosition;
+    private bool _captureModeActive;
+
+    private GameObject _resultPanelRoot;
+    private CanvasGroup _resultPanelCanvasGroup;
+    private Text _resultTitleText;
+    private Action _onRestartRequested;
+
     private const int RefWidth = 1080;
     private const int RefHeight = 1920;
 
@@ -67,6 +84,19 @@ public class UIManager : MonoBehaviour
     private const int ParallaxLayerCount = 4;
     private const int DepthOrbCount = 6;
 
+    private const float CaptureOverlayAlpha = 0.35f;
+    private const float CaptureGlowBaseSize = 220f;
+    private const float CaptureDotSize = 10f;
+    private const float CaptureDotSpeed = 80f;
+    private const float CaptureDotSpawnInterval = 0.14f;
+    private const int CaptureDotPoolSize = 12;
+    private const float CaptureSuccessGlowDuration = 0.45f;
+    private const float CaptureSuccessFadeDuration = 0.5f;
+    private const float CaptureFailShakeDuration = 0.22f;
+    private const float CaptureFailShakeAmount = 8f;
+    private const float CaptureFailFlashDuration = 0.15f;
+    private const float ResultPanelFadeDuration = 0.4f;
+
     private static Font _defaultFont;
 
     private static Font GetDefaultFont()
@@ -76,17 +106,45 @@ public class UIManager : MonoBehaviour
         return _defaultFont;
     }
 
-    public void Initialize(BattleManager battleManager, TurnManager turnManager)
+    public void Initialize(BattleManager battleManager, TurnManager turnManager, Action onRestartRequested = null)
     {
         _battleManager = battleManager;
         _turnManager = turnManager;
+        _onRestartRequested = onRestartRequested;
         if (_battleManager != null)
+        {
             _battleManager.OnUnitStatsChanged += RefreshAll;
+            _battleManager.OnCaptureResult += OnCaptureResult;
+            _battleManager.OnBattleEndWithResult += OnBattleEndWithResult;
+        }
         EnsureEventSystem();
         BuildCanvasAndUI();
         SubscribeToTurn();
         RefreshAll();
         StartCoroutine(RunSpawnAnimation());
+    }
+
+    /// <summary>Fade in the battle UI (e.g. after Start screen). Uses CanvasGroup alpha. No scene switch.</summary>
+    public void FadeInBattle(Action onComplete = null)
+    {
+        StartCoroutine(FadeInBattleCoroutine(onComplete));
+    }
+
+    private IEnumerator FadeInBattleCoroutine(Action onComplete)
+    {
+        if (_battleCanvasGroup == null) { onComplete?.Invoke(); yield break; }
+        _battleCanvasGroup.blocksRaycasts = true;
+        _battleCanvasGroup.interactable = true;
+        const float duration = 0.5f;
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            _battleCanvasGroup.alpha = Mathf.Clamp01(elapsed / duration);
+            yield return null;
+        }
+        _battleCanvasGroup.alpha = 1f;
+        onComplete?.Invoke();
     }
 
     private void EnsureEventSystem()
@@ -264,12 +322,19 @@ public class UIManager : MonoBehaviour
         var canvasGo = new GameObject("BattleCanvas");
         var canvas = canvasGo.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 0;
         canvasGo.AddComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         canvasGo.GetComponent<CanvasScaler>().referenceResolution = new Vector2(RefWidth, RefHeight);
         canvasGo.GetComponent<CanvasScaler>().matchWidthOrHeight = 0.5f;
         canvasGo.AddComponent<GraphicRaycaster>();
+        _battleCanvasGroup = canvasGo.AddComponent<CanvasGroup>();
+        _battleCanvasGroup.alpha = 0f;
+        _battleCanvasGroup.blocksRaycasts = false;
+        _battleCanvasGroup.interactable = false;
 
         var root = canvasGo.transform;
+        _canvasRootTransform = root;
+        _canvasRootBasePosition = root.localPosition;
 
         CreateBattleBackground(root);
 
@@ -278,6 +343,8 @@ public class UIManager : MonoBehaviour
             new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -EnemyTopOffset), new Vector2(EnemyPanelWidth, EnemyPanelHeight));
         _enemyPanelRect = (RectTransform)enemyPanel;
         _enemyPanelRect.pivot = new Vector2(0.5f, 1f);
+        _enemyPanelCanvasGroup = _enemyPanelRect.gameObject.AddComponent<CanvasGroup>();
+        CreateCaptureGlowUnderEnemy(enemyPanel);
         _enemyLabel = CreateText(enemyPanel, "EnemyLabel", "Enemy Lv1", 22,
             new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -40), new Vector2(280, 56));
         _enemyHpBarFill = CreateFilledBar(enemyPanel, "EnemyHP", Color.red, new Vector2(0.5f, 1f), new Vector2(0, -95), new Vector2(280, 24));
@@ -342,10 +409,117 @@ public class UIManager : MonoBehaviour
         _captureBtn.onClick.AddListener(OnCaptureClicked);
         _captureButtonObj.SetActive(false);
 
+        CreateCaptureOverlay(root);
+        CreateCaptureDotsContainer(root);
+
         const float spawnStartScale = 0.3f;
         if (_enemyPanelRect != null) _enemyPanelRect.localScale = Vector3.one * spawnStartScale;
         if (_ally1PanelRect != null) _ally1PanelRect.localScale = Vector3.one * spawnStartScale;
         if (_ally2PanelRect != null) _ally2PanelRect.localScale = Vector3.one * spawnStartScale;
+
+        CreateResultPanel();
+    }
+
+    private void CreateResultPanel()
+    {
+        if (_canvasRootTransform == null) return;
+        _resultPanelRoot = new GameObject("ResultPanel");
+        _resultPanelRoot.transform.SetParent(_canvasRootTransform, false);
+        _resultPanelRoot.transform.SetAsLastSibling();
+        var rect = _resultPanelRoot.AddComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+        var img = _resultPanelRoot.AddComponent<Image>();
+        img.color = new Color(0.06f, 0.04f, 0.1f, 0.92f);
+        _resultPanelCanvasGroup = _resultPanelRoot.AddComponent<CanvasGroup>();
+        _resultPanelCanvasGroup.alpha = 0f;
+        _resultPanelCanvasGroup.blocksRaycasts = false;
+        _resultPanelCanvasGroup.interactable = false;
+
+        var titleGo = new GameObject("ResultTitle");
+        titleGo.transform.SetParent(_resultPanelRoot.transform, false);
+        var titleRect = titleGo.AddComponent<RectTransform>();
+        titleRect.anchorMin = new Vector2(0.5f, 0.55f);
+        titleRect.anchorMax = new Vector2(0.5f, 0.55f);
+        titleRect.anchoredPosition = Vector2.zero;
+        titleRect.sizeDelta = new Vector2(500, 100);
+        _resultTitleText = titleGo.AddComponent<Text>();
+        _resultTitleText.text = "Victory";
+        _resultTitleText.fontSize = 52;
+        _resultTitleText.alignment = TextAnchor.MiddleCenter;
+        _resultTitleText.color = new Color(0.95f, 0.9f, 0.95f, 1f);
+        if (GetDefaultFont() != null) _resultTitleText.font = GetDefaultFont();
+
+        var btnGo = new GameObject("RestartButton");
+        btnGo.transform.SetParent(_resultPanelRoot.transform, false);
+        var btnRect = btnGo.AddComponent<RectTransform>();
+        btnRect.anchorMin = new Vector2(0.5f, 0.35f);
+        btnRect.anchorMax = new Vector2(0.5f, 0.35f);
+        btnRect.anchoredPosition = Vector2.zero;
+        btnRect.sizeDelta = new Vector2(260, 64);
+        var btnImg = btnGo.AddComponent<Image>();
+        btnImg.color = new Color(0.28f, 0.5f, 0.35f, 1f);
+        var btn = btnGo.AddComponent<Button>();
+        var textGo = new GameObject("Text");
+        textGo.transform.SetParent(btnGo.transform, false);
+        var textRect = textGo.AddComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = Vector2.zero;
+        textRect.offsetMax = Vector2.zero;
+        var btnText = textGo.AddComponent<Text>();
+        btnText.text = "Restart";
+        btnText.fontSize = 28;
+        btnText.alignment = TextAnchor.MiddleCenter;
+        btnText.color = Color.white;
+        if (GetDefaultFont() != null) btnText.font = GetDefaultFont();
+        btn.onClick.AddListener(OnRestartClicked);
+        _resultPanelRoot.SetActive(false);
+    }
+
+    private void OnBattleEndWithResult(bool isVictory)
+    {
+        if (_resultTitleText != null) _resultTitleText.text = isVictory ? "Victory" : "Defeat";
+        if (_resultTitleText != null) _resultTitleText.color = isVictory ? new Color(0.4f, 0.85f, 0.5f, 1f) : new Color(0.9f, 0.35f, 0.35f, 1f);
+        _resultPanelRoot.SetActive(true);
+        StartCoroutine(FadeInResultPanelCoroutine());
+    }
+
+    private IEnumerator FadeInResultPanelCoroutine()
+    {
+        if (_resultPanelCanvasGroup == null) yield break;
+        _resultPanelCanvasGroup.blocksRaycasts = true;
+        _resultPanelCanvasGroup.interactable = true;
+        float elapsed = 0f;
+        while (elapsed < ResultPanelFadeDuration)
+        {
+            elapsed += Time.deltaTime;
+            _resultPanelCanvasGroup.alpha = Mathf.Clamp01(elapsed / ResultPanelFadeDuration);
+            yield return null;
+        }
+        _resultPanelCanvasGroup.alpha = 1f;
+    }
+
+    private void OnRestartClicked()
+    {
+        _onRestartRequested?.Invoke();
+    }
+
+    /// <summary>Called after restart: hide result panel, restore enemy panel, refresh. No scene reload.</summary>
+    public void ResetAfterRestart()
+    {
+        if (_resultPanelRoot != null) _resultPanelRoot.SetActive(false);
+        if (_resultPanelCanvasGroup != null)
+        {
+            _resultPanelCanvasGroup.alpha = 0f;
+            _resultPanelCanvasGroup.blocksRaycasts = false;
+            _resultPanelCanvasGroup.interactable = false;
+        }
+        if (_enemyPanelCanvasGroup != null) _enemyPanelCanvasGroup.alpha = 1f;
+        RefreshAll();
+        UpdateCaptureButtonVisibility();
     }
 
     private Transform CreatePanel(Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax, Vector2 pos, Vector2 size)
@@ -659,12 +833,186 @@ public class UIManager : MonoBehaviour
         UpdateBackgroundVisuals();
         RefreshAll();
         UpdateCaptureButtonVisibility();
+        UpdateCaptureModeVisuals();
     }
 
     private void UpdateCaptureButtonVisibility()
     {
         if (_captureButtonObj != null && _battleManager != null)
             _captureButtonObj.SetActive(_battleManager.CanCapture());
+    }
+
+    private void CreateCaptureGlowUnderEnemy(Transform enemyPanel)
+    {
+        var glowGo = new GameObject("CaptureGlow");
+        glowGo.transform.SetParent(enemyPanel, false);
+        glowGo.transform.SetAsFirstSibling();
+        _captureGlowRect = glowGo.AddComponent<RectTransform>();
+        _captureGlowRect.anchorMin = new Vector2(0.5f, 0.5f);
+        _captureGlowRect.anchorMax = new Vector2(0.5f, 0.5f);
+        _captureGlowRect.anchoredPosition = new Vector2(0, -20);
+        _captureGlowRect.sizeDelta = new Vector2(CaptureGlowBaseSize, CaptureGlowBaseSize);
+        _captureGlowImage = glowGo.AddComponent<Image>();
+        _captureGlowImage.color = new Color(0.5f, 0.35f, 0.85f, 0.5f);
+        _captureGlowImage.raycastTarget = false;
+        glowGo.SetActive(false);
+    }
+
+    private void CreateCaptureOverlay(Transform root)
+    {
+        var overlayGo = new GameObject("CaptureOverlay");
+        overlayGo.transform.SetParent(root, false);
+        overlayGo.transform.SetSiblingIndex(1);
+        var rect = overlayGo.AddComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+        _captureOverlayImage = overlayGo.AddComponent<Image>();
+        _captureOverlayImage.color = new Color(0f, 0f, 0f, CaptureOverlayAlpha);
+        _captureOverlayImage.raycastTarget = false;
+        overlayGo.SetActive(false);
+    }
+
+    private void CreateCaptureDotsContainer(Transform root)
+    {
+        var containerGo = new GameObject("CaptureDotsContainer");
+        containerGo.transform.SetParent(root, false);
+        var rect = containerGo.AddComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 1f);
+        rect.anchorMax = new Vector2(0.5f, 1f);
+        rect.anchoredPosition = new Vector2(0, -EnemyTopOffset - 60);
+        rect.sizeDelta = new Vector2(400, 300);
+        _captureDotsContainer = containerGo.transform;
+        for (int i = 0; i < CaptureDotPoolSize; i++)
+        {
+            var dot = new GameObject("CaptureDot" + i);
+            dot.transform.SetParent(_captureDotsContainer, false);
+            var dotRect = dot.AddComponent<RectTransform>();
+            dotRect.anchorMin = new Vector2(0.5f, 0f);
+            dotRect.anchorMax = new Vector2(0.5f, 0f);
+            dotRect.sizeDelta = new Vector2(CaptureDotSize, CaptureDotSize);
+            dotRect.anchoredPosition = new Vector2(UnityEngine.Random.Range(-120, 120), 0);
+            var img = dot.AddComponent<Image>();
+            img.color = new Color(0.7f, 0.5f, 1f, 0.7f);
+            img.raycastTarget = false;
+            dot.SetActive(false);
+            _captureDots.Add(dotRect);
+        }
+    }
+
+    private void UpdateCaptureModeVisuals()
+    {
+        bool canCapture = _battleManager != null && _battleManager.CanCapture();
+        if (canCapture == _captureModeActive) return;
+        _captureModeActive = canCapture;
+        if (_captureOverlayImage != null) _captureOverlayImage.gameObject.SetActive(canCapture);
+        if (_captureGlowRect != null) _captureGlowRect.gameObject.SetActive(canCapture);
+        if (canCapture)
+        {
+            if (_captureDotsCoroutine != null) StopCoroutine(_captureDotsCoroutine);
+            _captureDotsCoroutine = StartCoroutine(FloatingDotsCoroutine());
+        }
+        else
+        {
+            if (_captureDotsCoroutine != null) { StopCoroutine(_captureDotsCoroutine); _captureDotsCoroutine = null; }
+            foreach (var d in _captureDots) if (d != null) d.gameObject.SetActive(false);
+        }
+    }
+
+    private IEnumerator FloatingDotsCoroutine()
+    {
+        float[] dotY = new float[_captureDots.Count];
+        float nextSpawn = 0f;
+        int nextIndex = 0;
+        for (int i = 0; i < dotY.Length; i++) dotY[i] = -200f;
+        while (_captureModeActive && _battleManager != null && _battleManager.CanCapture())
+        {
+            nextSpawn -= Time.deltaTime;
+            if (nextSpawn <= 0f)
+            {
+                nextSpawn = CaptureDotSpawnInterval;
+                var r = _captureDots[nextIndex];
+                if (r != null)
+                {
+                    r.gameObject.SetActive(true);
+                    r.anchoredPosition = new Vector2(UnityEngine.Random.Range(-120f, 120f), 0);
+                    dotY[nextIndex] = 0;
+                }
+                nextIndex = (nextIndex + 1) % _captureDots.Count;
+            }
+            for (int i = 0; i < _captureDots.Count; i++)
+            {
+                if (dotY[i] < 0) continue;
+                dotY[i] += CaptureDotSpeed * Time.deltaTime;
+                if (_captureDots[i] != null)
+                {
+                    _captureDots[i].anchoredPosition = new Vector2(_captureDots[i].anchoredPosition.x, dotY[i]);
+                    if (dotY[i] > 180f) { _captureDots[i].gameObject.SetActive(false); dotY[i] = -200f; }
+                }
+            }
+            yield return null;
+        }
+        _captureDotsCoroutine = null;
+    }
+
+    private void OnCaptureResult(bool success)
+    {
+        if (success)
+            StartCoroutine(CaptureSuccessCoroutine());
+        else
+            StartCoroutine(CaptureFailCoroutine());
+    }
+
+    private IEnumerator CaptureSuccessCoroutine()
+    {
+        _captureModeActive = false;
+        if (_captureOverlayImage != null) _captureOverlayImage.gameObject.SetActive(false);
+        if (_captureDotsCoroutine != null) { StopCoroutine(_captureDotsCoroutine); _captureDotsCoroutine = null; }
+        foreach (var d in _captureDots) if (d != null) d.gameObject.SetActive(false);
+        if (_captureGlowRect == null || _captureGlowImage == null || _enemyPanelCanvasGroup == null) yield break;
+        _captureGlowRect.gameObject.SetActive(true);
+        float elapsed = 0f;
+        while (elapsed < CaptureSuccessGlowDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = elapsed / CaptureSuccessGlowDuration;
+            float scale = Mathf.Lerp(1f, 2.2f, t);
+            float a = Mathf.Lerp(0.5f, 0f, t);
+            _captureGlowRect.localScale = Vector3.one * scale;
+            _captureGlowImage.color = new Color(0.5f, 0.35f, 0.85f, a);
+            yield return null;
+        }
+        _captureGlowRect.gameObject.SetActive(false);
+        _captureGlowRect.localScale = Vector3.one;
+        _captureGlowImage.color = new Color(0.5f, 0.35f, 0.85f, 0.5f);
+        elapsed = 0f;
+        while (elapsed < CaptureSuccessFadeDuration)
+        {
+            elapsed += Time.deltaTime;
+            _enemyPanelCanvasGroup.alpha = 1f - (elapsed / CaptureSuccessFadeDuration);
+            yield return null;
+        }
+        _enemyPanelCanvasGroup.alpha = 0f;
+    }
+
+    private IEnumerator CaptureFailCoroutine()
+    {
+        if (_canvasRootTransform == null || _enemyPanelRect == null) yield break;
+        Image enemyImage = _enemyPanelRect.GetComponent<Image>();
+        Color enemyColor = enemyImage != null ? enemyImage.color : PanelNormalColor;
+        float shakeElapsed = 0f;
+        while (shakeElapsed < CaptureFailShakeDuration)
+        {
+            shakeElapsed += Time.deltaTime;
+            float amp = CaptureFailShakeAmount * (1f - shakeElapsed / CaptureFailShakeDuration);
+            _canvasRootTransform.localPosition = _canvasRootBasePosition + (Vector3)(UnityEngine.Random.insideUnitCircle * amp);
+            if (enemyImage != null && shakeElapsed < CaptureFailFlashDuration)
+                enemyImage.color = TargetFlashColor;
+            yield return null;
+        }
+        _canvasRootTransform.localPosition = _canvasRootBasePosition;
+        if (enemyImage != null) enemyImage.color = enemyColor;
     }
 
     private void RefreshAll()

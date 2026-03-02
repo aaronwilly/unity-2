@@ -48,4 +48,12 @@ public class Unit
     {
         HasDefenseBuff = true;
     }
+
+    /// <summary>Reset HP, SP, and defense buff for battle restart. No scene reload.</summary>
+    public void Reset()
+    {
+        HP = MaxHP;
+        SP = MaxSP;
+        HasDefenseBuff = false;
+    }
 }

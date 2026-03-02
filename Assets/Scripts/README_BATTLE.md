@@ -29,11 +29,12 @@ Fully code-driven mobile portrait turn-based battle. No inspector references or 
 
 6. **Press Play**
    - Click the **Play** button in the top center of the Editor.
-   - The battle UI appears: 2 player units on the left, 1 enemy on the right, 3 ability buttons at the bottom.
+   - A **Start** screen appears with a **Start** button. Tap **Start** to fade into the battle.
+   - Battle UI: 2 player units (bottom left/right), 1 enemy (top center), 3 ability buttons at the bottom.
    - Use **Attack**, **Defend**, or **Special** on your turn; the enemy acts automatically on its turn.
    - When the enemy is below 30% HP, the **Capture** button appears—click it or drag a line to try to capture.
 
-No other setup is required. All UI and logic are created at runtime by the bootstrap.
+No other setup is required. All UI and logic are created at runtime by the bootstrap. No scene switching; start screen and battle are the same scene.
 
 ---
 
@@ -47,6 +48,7 @@ Put all scripts in **Assets/Scripts/** (flat layout):
 - `BattleManager.cs`
 - `CaptureManager.cs`
 - `UIManager.cs`
+- `StartScreenManager.cs`
 - `BattleBootstrap.cs`
 
 If you created the project from scratch, create the `Assets/Scripts` folder and place these files there. Unity will compile them automatically.
