@@ -49,6 +49,7 @@ Put all scripts in **Assets/Scripts/** (flat layout):
 - `CaptureManager.cs`
 - `UIManager.cs`
 - `StartScreenManager.cs`
+- `SoundManager.cs`
 - `BattleBootstrap.cs`
 
 If you created the project from scratch, create the `Assets/Scripts` folder and place these files there. Unity will compile them automatically.

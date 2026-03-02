@@ -19,12 +19,19 @@ public class BattleBootstrap : MonoBehaviour
 
     private void Awake()
     {
+        CreateSoundManager();
         CreateUnits();
         CreateManagers();
         CreateUI();
         CreateStartScreen();
         WireCaptureManager();
         _turnManager.OnTurnChanged += OnTurnChanged;
+    }
+
+    private void CreateSoundManager()
+    {
+        var go = new GameObject("SoundManager");
+        go.AddComponent<SoundManager>();
     }
 
     private void OnTurnChanged(int turnIndex)

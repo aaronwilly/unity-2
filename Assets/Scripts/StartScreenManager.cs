@@ -102,6 +102,7 @@ public class StartScreenManager : MonoBehaviour
         if (GetDefaultFont() != null) btnText.font = GetDefaultFont();
         btn.onClick.AddListener(() =>
         {
+            if (SoundManager.Instance != null) SoundManager.Instance.PlayClick();
             if (_panelCanvasGroup == null) return;
             btn.interactable = false;
             StartCoroutine(FadeOutAndNotify(onStartPressed));

@@ -423,7 +423,11 @@ public class UIManager : MonoBehaviour
         capTextRect.anchorMax = Vector2.one;
         capTextRect.offsetMin = Vector2.zero;
         capTextRect.offsetMax = Vector2.zero;
-        _captureBtn.onClick.AddListener(OnCaptureClicked);
+        _captureBtn.onClick.AddListener(() =>
+        {
+            if (SoundManager.Instance != null) SoundManager.Instance.PlayClick();
+            OnCaptureClicked();
+        });
         _captureButtonObj.SetActive(false);
 
         CreateCaptureOverlay(root);
@@ -522,6 +526,7 @@ public class UIManager : MonoBehaviour
 
     private void OnRestartClicked()
     {
+        if (SoundManager.Instance != null) SoundManager.Instance.PlayClick();
         _onRestartRequested?.Invoke();
     }
 
@@ -645,7 +650,11 @@ public class UIManager : MonoBehaviour
         textRect.anchorMax = Vector2.one;
         textRect.offsetMin = Vector2.zero;
         textRect.offsetMax = Vector2.zero;
-        btn.onClick.AddListener(() => onClick?.Invoke());
+        btn.onClick.AddListener(() =>
+        {
+            if (SoundManager.Instance != null) SoundManager.Instance.PlayClick();
+            onClick?.Invoke();
+        });
         return btn;
     }
 
@@ -670,7 +679,11 @@ public class UIManager : MonoBehaviour
         textRect.anchorMax = Vector2.one;
         textRect.offsetMin = Vector2.zero;
         textRect.offsetMax = Vector2.zero;
-        btn.onClick.AddListener(() => onClick?.Invoke());
+        btn.onClick.AddListener(() =>
+        {
+            if (SoundManager.Instance != null) SoundManager.Instance.PlayClick();
+            onClick?.Invoke();
+        });
 
         var rect = (RectTransform)go.transform;
         var et = go.AddComponent<EventTrigger>();
@@ -876,6 +889,7 @@ public class UIManager : MonoBehaviour
     /// <summary>Coroutine: move attacker forward, shake target, flash target red. No Animator. onComplete invoked when done.</summary>
     public IEnumerator PlayAttackAnimationCoroutine(Unit attacker, Unit target, Action onComplete = null)
     {
+        if (SoundManager.Instance != null) SoundManager.Instance.PlayAttack();
         RectTransform attackerRect = GetPanelRectForUnit(attacker);
         RectTransform targetRect = GetPanelRectForUnit(target);
         if (attackerRect == null || targetRect == null)
@@ -1077,7 +1091,10 @@ public class UIManager : MonoBehaviour
     private void OnCaptureResult(bool success)
     {
         if (success)
+        {
+            if (SoundManager.Instance != null) SoundManager.Instance.PlayCaptureSuccess();
             StartCoroutine(CaptureSuccessCoroutine());
+        }
         else
             StartCoroutine(CaptureFailCoroutine());
     }
