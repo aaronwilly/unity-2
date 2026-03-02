@@ -1,15 +1,25 @@
 using System;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Builds all battle UI in code: Canvas, HP/SP bars, turn text, ability buttons, capture button.
+/// Builds all battle UI in code: Canvas, background, HP/SP bars, turn text, ability buttons, capture button.
 /// No inspector references; receives BattleManager and wires buttons in code.
 /// </summary>
 public class UIManager : MonoBehaviour
 {
     private BattleManager _battleManager;
     private TurnManager _turnManager;
+
+    private RectTransform _backgroundRect;
+    private Image _backgroundImage;
+    private RectTransform[] _parallaxLayers;
+    private RectTransform[] _depthOrbs;
+    private Image[] _depthOrbImages;
+    private RectTransform _enemyPanelRect;
+    private RectTransform _ally1PanelRect;
+    private RectTransform _ally2PanelRect;
 
     private Text _turnText;
     private GameObject _p1HpBarFill;
@@ -29,6 +39,20 @@ public class UIManager : MonoBehaviour
 
     private const int RefWidth = 1080;
     private const int RefHeight = 1920;
+
+    // Portrait layout (reference resolution 1080x1920)
+    private const float EnemyPanelWidth = 320f;
+    private const float EnemyPanelHeight = 200f;
+    private const float AllyPanelWidth = 320f;
+    private const float AllyPanelHeight = 220f;
+    private const float MarginSide = 80f;
+    private const float MarginBottom = 140f;
+    private const float EnemyTopOffset = 180f;
+    private const float ParallaxAmplitude = 12f;
+    private const float BackgroundColorSpeed = 0.4f;
+    private const int ParallaxLayerCount = 4;
+    private const int DepthOrbCount = 6;
+
     private static Font _defaultFont;
 
     private static Font GetDefaultFont()
@@ -48,6 +72,7 @@ public class UIManager : MonoBehaviour
         BuildCanvasAndUI();
         SubscribeToTurn();
         RefreshAll();
+        StartCoroutine(RunSpawnAnimation());
     }
 
     private void EnsureEventSystem()
@@ -57,6 +82,166 @@ public class UIManager : MonoBehaviour
             var esGo = new GameObject("EventSystem");
             esGo.AddComponent<UnityEngine.EventSystems.EventSystem>();
             esGo.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
+        }
+    }
+
+    /// <summary>Creates a 3D-style battle background: base gradient, multiple parallax layers, and floating depth orbs. All via code.</summary>
+    private void CreateBattleBackground(Transform root)
+    {
+        var bgRoot = new GameObject("BattleBackground");
+        bgRoot.transform.SetParent(root, false);
+        _backgroundRect = bgRoot.AddComponent<RectTransform>();
+        _backgroundRect.anchorMin = Vector2.zero;
+        _backgroundRect.anchorMax = Vector2.one;
+        _backgroundRect.offsetMin = Vector2.zero;
+        _backgroundRect.offsetMax = Vector2.zero;
+        _backgroundImage = bgRoot.AddComponent<Image>();
+        _backgroundImage.color = new Color(0.06f, 0.04f, 0.12f, 1f);
+        _backgroundImage.raycastTarget = false;
+
+        // Simulated gradient: top (darker) and bottom (lighter) bands for depth
+        var topBand = CreateBgLayer(bgRoot.transform, "TopBand", new Color(0.08f, 0.05f, 0.15f, 0.9f),
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, 0), new Vector2(RefWidth + 200, RefHeight * 0.6f));
+        var bottomBand = CreateBgLayer(bgRoot.transform, "BottomBand", new Color(0.12f, 0.08f, 0.2f, 0.85f),
+            new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 0), new Vector2(RefWidth + 200, RefHeight * 0.5f));
+
+        // Multiple parallax layers (back to front) for 3D depth
+        _parallaxLayers = new RectTransform[ParallaxLayerCount];
+        var layerColors = new[]
+        {
+            new Color(0.15f, 0.1f, 0.28f, 0.35f),
+            new Color(0.18f, 0.12f, 0.32f, 0.3f),
+            new Color(0.12f, 0.08f, 0.22f, 0.4f),
+            new Color(0.08f, 0.06f, 0.15f, 0.5f)
+        };
+        for (int i = 0; i < ParallaxLayerCount; i++)
+        {
+            var layer = CreateBgLayer(bgRoot.transform, "ParallaxLayer" + i, layerColors[i],
+                Vector2.zero, Vector2.one, Vector2.zero, new Vector2(RefWidth + 400, RefHeight + 200));
+            _parallaxLayers[i] = (RectTransform)layer;
+        }
+
+        // Floating "depth orbs" for 3D atmosphere (soft glow quads)
+        _depthOrbs = new RectTransform[DepthOrbCount];
+        _depthOrbImages = new Image[DepthOrbCount];
+        float[] orbX = { 0.15f, 0.45f, 0.75f, 0.25f, 0.6f, 0.85f };
+        float[] orbY = { 0.2f, 0.35f, 0.25f, 0.65f, 0.55f, 0.7f };
+        int[] orbSize = { 180, 120, 200, 100, 160, 140 };
+        for (int i = 0; i < DepthOrbCount; i++)
+        {
+            var orb = new GameObject("DepthOrb" + i);
+            orb.transform.SetParent(bgRoot.transform, false);
+            var rect = orb.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(orbX[i], orbY[i]);
+            rect.anchorMax = new Vector2(orbX[i], orbY[i]);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = new Vector2(orbSize[i], orbSize[i]);
+            var img = orb.AddComponent<Image>();
+            img.color = new Color(0.35f, 0.2f, 0.5f, 0.12f);
+            img.raycastTarget = false;
+            _depthOrbs[i] = rect;
+            _depthOrbImages[i] = img;
+        }
+    }
+
+    private Transform CreateBgLayer(Transform parent, string name, Color color, Vector2 anchorMin, Vector2 anchorMax, Vector2 pos, Vector2 size)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        var rect = go.AddComponent<RectTransform>();
+        rect.anchorMin = anchorMin;
+        rect.anchorMax = anchorMax;
+        rect.anchoredPosition = pos;
+        rect.sizeDelta = size;
+        var img = go.AddComponent<Image>();
+        img.color = color;
+        img.raycastTarget = false;
+        return go.transform;
+    }
+
+    private void UpdateBackgroundVisuals()
+    {
+        float time = Time.time;
+
+        // Base color slow pulse
+        if (_backgroundImage != null)
+        {
+            float t = Mathf.Sin(time * BackgroundColorSpeed) * 0.5f + 0.5f;
+            _backgroundImage.color = Color.Lerp(
+                new Color(0.05f, 0.03f, 0.1f, 1f),
+                new Color(0.08f, 0.06f, 0.14f, 1f),
+                t);
+        }
+
+        // Multi-layer parallax: each layer moves at different speed/phase/amplitude for 3D effect
+        if (_parallaxLayers != null)
+        {
+            float[] speeds = { 0.3f, 0.5f, 0.7f, 0.45f };
+            float[] phases = { 0f, 1.2f, 2.5f, 0.8f };
+            float[] ampY = { 8f, 14f, 20f, 11f };
+            float[] ampX = { 3f, 6f, 4f, 5f };
+            for (int i = 0; i < _parallaxLayers.Length && i < speeds.Length; i++)
+            {
+                if (_parallaxLayers[i] == null) continue;
+                float y = Mathf.Sin(time * speeds[i] + phases[i]) * ampY[i];
+                float x = Mathf.Sin(time * speeds[i] * 0.7f + phases[i] * 1.3f) * ampX[i];
+                _parallaxLayers[i].anchoredPosition = new Vector2(x, y);
+            }
+        }
+
+        // Depth orbs: gentle float + opacity pulse
+        if (_depthOrbs != null && _depthOrbImages != null)
+        {
+            float[] orbSpeeds = { 0.4f, 0.6f, 0.35f, 0.55f, 0.45f, 0.5f };
+            float[] orbPhases = { 0f, 2f, 1f, 3f, 1.5f, 2.5f };
+            float[] orbAmp = { 15f, 25f, 20f, 18f, 22f, 12f };
+            for (int i = 0; i < _depthOrbs.Length && i < orbSpeeds.Length; i++)
+            {
+                if (_depthOrbs[i] != null)
+                {
+                    float y = Mathf.Sin(time * orbSpeeds[i] + orbPhases[i]) * orbAmp[i];
+                    float x = Mathf.Sin(time * orbSpeeds[i] * 0.6f + orbPhases[i] * 0.9f) * (orbAmp[i] * 0.4f);
+                    _depthOrbs[i].anchoredPosition = new Vector2(x, y);
+                    float scale = 0.92f + Mathf.Sin(time * 0.5f + i) * 0.08f;
+                    _depthOrbs[i].localScale = Vector3.one * scale;
+                }
+                if (_depthOrbImages != null && i < _depthOrbImages.Length && _depthOrbImages[i] != null)
+                {
+                    float a = 0.08f + Mathf.Sin(time * 0.4f + i * 0.7f) * 0.04f;
+                    var c = _depthOrbImages[i].color;
+                    _depthOrbImages[i].color = new Color(c.r, c.g, c.b, Mathf.Clamp01(a));
+                }
+            }
+        }
+    }
+
+    /// <summary>Scale-in animation for unit panels. Keeps everything code-driven.</summary>
+    private IEnumerator RunSpawnAnimation()
+    {
+        const float duration = 0.35f;
+        const float startScale = 0.3f;
+        RectTransform[] panels = { _enemyPanelRect, _ally1PanelRect, _ally2PanelRect };
+        foreach (var rect in panels)
+        {
+            if (rect != null) rect.localScale = Vector3.one * startScale;
+        }
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            t = 1f - (1f - t) * (1f - t);
+            float s = Mathf.Lerp(startScale, 1f, t);
+            foreach (var rect in panels)
+            {
+                if (rect != null) rect.localScale = Vector3.one * s;
+            }
+            yield return null;
+        }
+        foreach (var rect in panels)
+        {
+            if (rect != null) rect.localScale = Vector3.one;
         }
     }
 
@@ -72,26 +257,40 @@ public class UIManager : MonoBehaviour
 
         var root = canvasGo.transform;
 
-        _turnText = CreateText(root, "TurnLabel", "Turn: Player 1", 36,
-            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -80), new Vector2(400, 80));
+        CreateBattleBackground(root);
 
-        var playerPanel = CreatePanel(root, "PlayerPanel",
-            new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(160, 0), new Vector2(320, 600));
-        _p1Label = CreateText(playerPanel, "P1Label", "P1 Lv1", 22,
-            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -40), new Vector2(280, 56));
-        _p1HpBarFill = CreateFilledBar(playerPanel, "P1HP", Color.green, new Vector2(0.5f, 1f), new Vector2(0, -105), new Vector2(280, 24));
-        _p1SpBarFill = CreateFilledBar(playerPanel, "P1SP", Color.blue, new Vector2(0.5f, 1f), new Vector2(0, -145), new Vector2(280, 16));
-        _p2Label = CreateText(playerPanel, "P2Label", "P2 Lv1", 22,
-            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -220), new Vector2(280, 56));
-        _p2HpBarFill = CreateFilledBar(playerPanel, "P2HP", Color.green, new Vector2(0.5f, 1f), new Vector2(0, -285), new Vector2(280, 24));
-        _p2SpBarFill = CreateFilledBar(playerPanel, "P2SP", Color.blue, new Vector2(0.5f, 1f), new Vector2(0, -325), new Vector2(280, 16));
-
+        // Enemy: top center (portrait layout)
         var enemyPanel = CreatePanel(root, "EnemyPanel",
-            new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-160, 0), new Vector2(320, 200));
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -EnemyTopOffset), new Vector2(EnemyPanelWidth, EnemyPanelHeight));
+        _enemyPanelRect = (RectTransform)enemyPanel;
+        _enemyPanelRect.pivot = new Vector2(0.5f, 1f);
         _enemyLabel = CreateText(enemyPanel, "EnemyLabel", "Enemy Lv1", 22,
             new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -40), new Vector2(280, 56));
         _enemyHpBarFill = CreateFilledBar(enemyPanel, "EnemyHP", Color.red, new Vector2(0.5f, 1f), new Vector2(0, -95), new Vector2(280, 24));
         _enemySpBarFill = CreateFilledBar(enemyPanel, "EnemySP", Color.cyan, new Vector2(0.5f, 1f), new Vector2(0, -135), new Vector2(280, 16));
+
+        // Ally 1: bottom left
+        var ally1Panel = CreatePanel(root, "Ally1Panel",
+            new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(MarginSide, MarginBottom), new Vector2(AllyPanelWidth, AllyPanelHeight));
+        _ally1PanelRect = (RectTransform)ally1Panel;
+        _ally1PanelRect.pivot = new Vector2(0f, 0f);
+        _p1Label = CreateText(ally1Panel, "P1Label", "P1 Lv1", 22,
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -40), new Vector2(280, 56));
+        _p1HpBarFill = CreateFilledBar(ally1Panel, "P1HP", Color.green, new Vector2(0.5f, 1f), new Vector2(0, -95), new Vector2(280, 24));
+        _p1SpBarFill = CreateFilledBar(ally1Panel, "P1SP", Color.blue, new Vector2(0.5f, 1f), new Vector2(0, -135), new Vector2(280, 16));
+
+        // Ally 2: bottom right
+        var ally2Panel = CreatePanel(root, "Ally2Panel",
+            new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-MarginSide, MarginBottom), new Vector2(AllyPanelWidth, AllyPanelHeight));
+        _ally2PanelRect = (RectTransform)ally2Panel;
+        _ally2PanelRect.pivot = new Vector2(1f, 0f);
+        _p2Label = CreateText(ally2Panel, "P2Label", "P2 Lv1", 22,
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -40), new Vector2(280, 56));
+        _p2HpBarFill = CreateFilledBar(ally2Panel, "P2HP", Color.green, new Vector2(0.5f, 1f), new Vector2(0, -95), new Vector2(280, 24));
+        _p2SpBarFill = CreateFilledBar(ally2Panel, "P2SP", Color.blue, new Vector2(0.5f, 1f), new Vector2(0, -135), new Vector2(280, 16));
+
+        _turnText = CreateText(root, "TurnLabel", "Turn: Player 1", 36,
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -30), new Vector2(400, 80));
 
         var abilityPanel = CreatePanel(root, "AbilityPanel",
             new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 120), new Vector2(RefWidth - 80, 100));
@@ -127,6 +326,11 @@ public class UIManager : MonoBehaviour
         capTextRect.offsetMax = Vector2.zero;
         _captureBtn.onClick.AddListener(OnCaptureClicked);
         _captureButtonObj.SetActive(false);
+
+        const float spawnStartScale = 0.3f;
+        if (_enemyPanelRect != null) _enemyPanelRect.localScale = Vector3.one * spawnStartScale;
+        if (_ally1PanelRect != null) _ally1PanelRect.localScale = Vector3.one * spawnStartScale;
+        if (_ally2PanelRect != null) _ally2PanelRect.localScale = Vector3.one * spawnStartScale;
     }
 
     private Transform CreatePanel(Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax, Vector2 pos, Vector2 size)
@@ -277,6 +481,7 @@ public class UIManager : MonoBehaviour
 
     private void Update()
     {
+        UpdateBackgroundVisuals();
         RefreshAll();
         UpdateCaptureButtonVisibility();
     }
