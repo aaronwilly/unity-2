@@ -12,6 +12,7 @@ public class TurnManager
     public const int EnemyIndex = 2;
     public const int TotalActors = 3;
 
+    /// <summary>Fired when turn changes (0=P1, 1=P2, 2=Enemy). Used for turn indicator and glow.</summary>
     public event Action<int> OnTurnChanged;
 
     public TurnManager()

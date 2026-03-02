@@ -68,6 +68,20 @@ public class UIManager : MonoBehaviour
     private Text _resultTitleText;
     private Action _onRestartRequested;
 
+    private GameObject _enemyTurnGlow;
+    private GameObject _ally1TurnGlow;
+    private GameObject _ally2TurnGlow;
+    private GameObject _turnFloatingTextRoot;
+    private Text _turnFloatingText;
+    private CanvasGroup _turnFloatingCanvasGroup;
+    private Coroutine _turnTextAnimationCoroutine;
+    private const float TurnGlowOutlineOffset = 16f;
+    private static readonly Color TurnGlowColor = new Color(1f, 0.9f, 0.4f, 0.45f);
+    private const float TurnTextScaleInDuration = 0.2f;
+    private const float TurnTextFadeOutDuration = 0.7f;
+    private const float TurnTextPeakScale = 1.15f;
+    private const float TurnTextStartScale = 0.5f;
+
     private const int RefWidth = 1080;
     private const int RefHeight = 1920;
 
@@ -344,6 +358,7 @@ public class UIManager : MonoBehaviour
         _enemyPanelRect = (RectTransform)enemyPanel;
         _enemyPanelRect.pivot = new Vector2(0.5f, 1f);
         _enemyPanelCanvasGroup = _enemyPanelRect.gameObject.AddComponent<CanvasGroup>();
+        _enemyTurnGlow = AddTurnGlowToPanel(enemyPanel);
         CreateCaptureGlowUnderEnemy(enemyPanel);
         _enemyLabel = CreateText(enemyPanel, "EnemyLabel", "Enemy Lv1", 22,
             new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -40), new Vector2(280, 56));
@@ -355,6 +370,7 @@ public class UIManager : MonoBehaviour
             new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(MarginSide, MarginBottom), new Vector2(AllyPanelWidth, AllyPanelHeight));
         _ally1PanelRect = (RectTransform)ally1Panel;
         _ally1PanelRect.pivot = new Vector2(0f, 0f);
+        _ally1TurnGlow = AddTurnGlowToPanel(ally1Panel);
         _p1Label = CreateText(ally1Panel, "P1Label", "P1 Lv1", 22,
             new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -40), new Vector2(280, 56));
         _p1HpBarFill = CreateFilledBar(ally1Panel, "P1HP", Color.green, new Vector2(0.5f, 1f), new Vector2(0, -95), new Vector2(280, 24));
@@ -365,6 +381,7 @@ public class UIManager : MonoBehaviour
             new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-MarginSide, MarginBottom), new Vector2(AllyPanelWidth, AllyPanelHeight));
         _ally2PanelRect = (RectTransform)ally2Panel;
         _ally2PanelRect.pivot = new Vector2(1f, 0f);
+        _ally2TurnGlow = AddTurnGlowToPanel(ally2Panel);
         _p2Label = CreateText(ally2Panel, "P2Label", "P2 Lv1", 22,
             new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -40), new Vector2(280, 56));
         _p2HpBarFill = CreateFilledBar(ally2Panel, "P2HP", Color.green, new Vector2(0.5f, 1f), new Vector2(0, -95), new Vector2(280, 24));
@@ -411,6 +428,7 @@ public class UIManager : MonoBehaviour
 
         CreateCaptureOverlay(root);
         CreateCaptureDotsContainer(root);
+        CreateTurnFloatingText(root);
 
         const float spawnStartScale = 0.3f;
         if (_enemyPanelRect != null) _enemyPanelRect.localScale = Vector3.one * spawnStartScale;
@@ -743,7 +761,107 @@ public class UIManager : MonoBehaviour
     private void SubscribeToTurn()
     {
         if (_turnManager != null)
-            _turnManager.OnTurnChanged += _ => { RefreshAll(); };
+        {
+            _turnManager.OnTurnChanged += OnTurnChanged;
+            UpdateTurnIndicator(_turnManager.GetCurrentTurnIndex());
+        }
+    }
+
+    private void OnTurnChanged(int turnIndex)
+    {
+        RefreshAll();
+        UpdateTurnIndicator(turnIndex);
+    }
+
+    /// <summary>Glow outline behind panel content. Created in code; no assets.</summary>
+    private GameObject AddTurnGlowToPanel(Transform panel)
+    {
+        var glowGo = new GameObject("TurnGlow");
+        glowGo.transform.SetParent(panel, false);
+        glowGo.transform.SetAsFirstSibling();
+        var rect = glowGo.AddComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = new Vector2(-TurnGlowOutlineOffset, -TurnGlowOutlineOffset);
+        rect.offsetMax = new Vector2(TurnGlowOutlineOffset, TurnGlowOutlineOffset);
+        var img = glowGo.AddComponent<Image>();
+        img.color = TurnGlowColor;
+        img.raycastTarget = false;
+        glowGo.SetActive(false);
+        return glowGo;
+    }
+
+    private void CreateTurnFloatingText(Transform root)
+    {
+        _turnFloatingTextRoot = new GameObject("TurnFloatingText");
+        _turnFloatingTextRoot.transform.SetParent(root, false);
+        var rect = _turnFloatingTextRoot.AddComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = Vector2.zero;
+        rect.sizeDelta = new Vector2(320, 60);
+        _turnFloatingCanvasGroup = _turnFloatingTextRoot.AddComponent<CanvasGroup>();
+        _turnFloatingCanvasGroup.alpha = 0f;
+        _turnFloatingText = _turnFloatingTextRoot.AddComponent<Text>();
+        _turnFloatingText.text = "Your Turn";
+        _turnFloatingText.fontSize = 34;
+        _turnFloatingText.alignment = TextAnchor.MiddleCenter;
+        _turnFloatingText.color = new Color(1f, 0.95f, 0.7f, 1f);
+        if (GetDefaultFont() != null) _turnFloatingText.font = GetDefaultFont();
+        _turnFloatingTextRoot.SetActive(false);
+    }
+
+    private void UpdateTurnIndicator(int turnIndex)
+    {
+        if (_enemyTurnGlow != null) _enemyTurnGlow.SetActive(turnIndex == 2);
+        if (_ally1TurnGlow != null) _ally1TurnGlow.SetActive(turnIndex == 0);
+        if (_ally2TurnGlow != null) _ally2TurnGlow.SetActive(turnIndex == 1);
+        RectTransform activePanel = turnIndex == 0 ? _ally1PanelRect : turnIndex == 1 ? _ally2PanelRect : _enemyPanelRect;
+        if (_turnFloatingTextRoot != null && activePanel != null)
+        {
+            _turnFloatingTextRoot.transform.SetParent(activePanel, false);
+            var rect = (RectTransform)_turnFloatingTextRoot.transform;
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0, 52);
+            if (_turnFloatingText != null)
+                _turnFloatingText.text = turnIndex < 2 ? "Your Turn" : "Enemy Turn";
+            _turnFloatingTextRoot.SetActive(true);
+            if (_turnFloatingCanvasGroup != null) _turnFloatingCanvasGroup.alpha = 1f;
+            _turnFloatingTextRoot.transform.localScale = Vector3.one * TurnTextStartScale;
+            if (_turnTextAnimationCoroutine != null) StopCoroutine(_turnTextAnimationCoroutine);
+            _turnTextAnimationCoroutine = StartCoroutine(AnimateTurnTextCoroutine());
+        }
+    }
+
+    private IEnumerator AnimateTurnTextCoroutine()
+    {
+        if (_turnFloatingTextRoot == null || _turnFloatingCanvasGroup == null) yield break;
+        float elapsed = 0f;
+        while (elapsed < TurnTextScaleInDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / TurnTextScaleInDuration);
+            t = 1f - (1f - t) * (1f - t);
+            float s = Mathf.Lerp(TurnTextStartScale, TurnTextPeakScale, t);
+            _turnFloatingTextRoot.transform.localScale = Vector3.one * s;
+            yield return null;
+        }
+        _turnFloatingTextRoot.transform.localScale = Vector3.one * TurnTextPeakScale;
+        elapsed = 0f;
+        while (elapsed < TurnTextFadeOutDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / TurnTextFadeOutDuration);
+            _turnFloatingCanvasGroup.alpha = 1f - t;
+            float s = Mathf.Lerp(TurnTextPeakScale, 1f, t);
+            _turnFloatingTextRoot.transform.localScale = Vector3.one * s;
+            yield return null;
+        }
+        _turnFloatingCanvasGroup.alpha = 0f;
+        _turnFloatingTextRoot.transform.localScale = Vector3.one;
+        _turnFloatingTextRoot.SetActive(false);
+        _turnTextAnimationCoroutine = null;
     }
 
     private RectTransform GetPanelRectForUnit(Unit unit)
